@@ -18,8 +18,8 @@ class MainWindow(Gtk.Window):
     
     def __init__(self):
         super().__init__(title="Samsung TV Media File Converter")
-        self.set_default_size(700, 500)
-        self.set_border_width(10)
+        self.set_default_size(800, 600)
+        self.set_border_width(20)
         
         self.current_file = None
         self.media_handler = MediaHandler()
@@ -38,21 +38,20 @@ class MainWindow(Gtk.Window):
         
         # Drop zone message (shown when no file loaded)
         self.drop_zone = Gtk.Label()
-        self.drop_zone.set_markup("<big>Drop a video file here (MKV or MP4)</big>")
-        self.drop_zone.set_size_request(-1, 100)
-        drop_frame = Gtk.Frame()
-        drop_frame.add(self.drop_zone)
-        main_box.pack_start(drop_frame, False, False, 0)
+        self.drop_zone.set_markup("<span size='large' color='#999999'><i>Drop a video file anywhere in the window (MKV or MP4)</i></span>")
+        self.drop_zone.set_size_request(-1, 30)
+        main_box.pack_start(self.drop_zone, False, False, 10)
         
         # Media file section with auto-convert checkbox
-        media_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        main_box.pack_start(media_box, False, False, 0)
+        media_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=15)
+        main_box.pack_start(media_box, False, False, 15)
         
         # Media file label (clickable)
         self.media_label = Gtk.Label()
-        self.media_label.set_markup("<b>No file loaded</b>")
+        self.media_label.set_markup("<span size='large' weight='bold'>No file loaded</span>")
         self.media_label.set_selectable(True)
         self.media_label.set_halign(Gtk.Align.START)
+        self.media_label.set_line_wrap(True)
         media_event_box = Gtk.EventBox()
         media_event_box.add(self.media_label)
         media_event_box.connect("button-press-event", self._on_media_label_clicked)
@@ -60,20 +59,20 @@ class MainWindow(Gtk.Window):
         media_box.pack_start(media_event_box, True, True, 0)
         
         # Auto-convert checkbox
-        self.auto_convert_check = Gtk.CheckButton(label="Auto-convert")
+        self.auto_convert_check = Gtk.CheckButton(label="⚡ Auto-convert")
         self.auto_convert_check.set_tooltip_text("Automatically process files when dropped")
         media_box.pack_start(self.auto_convert_check, False, False, 0)
         
         # Status label
         self.status_label = Gtk.Label()
-        self.status_label.set_markup("<i>Ready</i>")
-        main_box.pack_start(self.status_label, False, False, 0)
+        self.status_label.set_markup("<span color='#666666'><i>Ready</i></span>")
+        main_box.pack_start(self.status_label, False, False, 5)
         
         # Embedded subtitles section
         embed_label = Gtk.Label()
-        embed_label.set_markup("<b>Embedded Subtitles:</b>")
+        embed_label.set_markup("<span size='large' weight='bold'>📎 Embedded Subtitles</span>")
         embed_label.set_halign(Gtk.Align.START)
-        main_box.pack_start(embed_label, False, False, 0)
+        main_box.pack_start(embed_label, False, False, 10)
         
         # Embedded subtitles list
         self.embedded_store = Gtk.ListStore(str, str)  # Language, Size
@@ -88,15 +87,16 @@ class MainWindow(Gtk.Window):
         self.embedded_view.append_column(size_column)
         
         embed_scroll = Gtk.ScrolledWindow()
-        embed_scroll.set_size_request(-1, 100)
+        embed_scroll.set_size_request(-1, 120)
+        embed_scroll.set_shadow_type(Gtk.ShadowType.IN)
         embed_scroll.add(self.embedded_view)
-        main_box.pack_start(embed_scroll, True, True, 0)
+        main_box.pack_start(embed_scroll, True, True, 5)
         
         # External subtitles section
         external_label = Gtk.Label()
-        external_label.set_markup("<b>External Subtitles:</b>")
+        external_label.set_markup("<span size='large' weight='bold'>📄 External Subtitles</span>")
         external_label.set_halign(Gtk.Align.START)
-        main_box.pack_start(external_label, False, False, 0)
+        main_box.pack_start(external_label, False, False, 10)
         
         # External subtitles list
         self.external_store = Gtk.ListStore(str, str)  # Language, Size
@@ -111,15 +111,17 @@ class MainWindow(Gtk.Window):
         self.external_view.append_column(size_column2)
         
         external_scroll = Gtk.ScrolledWindow()
-        external_scroll.set_size_request(-1, 100)
+        external_scroll.set_size_request(-1, 120)
+        external_scroll.set_shadow_type(Gtk.ShadowType.IN)
         external_scroll.add(self.external_view)
-        main_box.pack_start(external_scroll, True, True, 0)
+        main_box.pack_start(external_scroll, True, True, 5)
         
         # Cleanup button (works for both MKV and MP4 files)
-        self.cleanup_button = Gtk.Button(label="Cleanup")
-        self.cleanup_button.set_no_show_all(True)
+        self.cleanup_button = Gtk.Button(label="🧹 Cleanup & Optimize")
+        self.cleanup_button.set_size_request(-1, 50)
+        self.cleanup_button.set_sensitive(False)  # Disabled until file is loaded
         self.cleanup_button.connect("clicked", self._on_cleanup_button_clicked)
-        main_box.pack_start(self.cleanup_button, False, False, 0)
+        main_box.pack_start(self.cleanup_button, False, False, 15)
     
     def _setup_drag_and_drop(self):
         """Setup drag and drop functionality for the entire window."""
@@ -159,7 +161,10 @@ class MainWindow(Gtk.Window):
         
         # Update media label
         filename = os.path.basename(file_path)
-        self.media_label.set_markup(f"<b>File:</b> {filename}\n<i>(Click to open in VLC)</i>")
+        self.media_label.set_markup(
+            f"<span size='large' weight='bold'>🎬 {filename}</span>\n"
+            f"<span size='small' color='#666666'><i>Click to open in VLC</i></span>"
+        )
         
         # Analyze file
         embedded_subs, external_subs = self.media_handler.analyze_file(file_path)
@@ -177,8 +182,7 @@ class MainWindow(Gtk.Window):
         for sub in external_subs:
             self.external_store.append([sub['language'], sub['size']])
         
-        # Show cleanup button
-        self.cleanup_button.show()
+        # Enable cleanup button
         self.cleanup_button.set_sensitive(True)
         
         self.status_label.set_markup("<i>Ready</i>")
