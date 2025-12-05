@@ -4,13 +4,16 @@ A Linux GUI application that converts MKV/MP4 files and manages subtitles for Sa
 
 ## Features
 
-- **Drag & Drop Interface**: Simply drag a video file (MKV or MP4) onto the window
+- **Drag & Drop Interface**: Simply drag a video file (MKV or MP4) anywhere in the window
 - **Embedded Subtitle Detection**: Displays all embedded subtitles from MKV files
 - **External Subtitle Scanning**: Finds and analyzes .srt subtitle files
-- **Language Detection**: Automatically detects English and French subtitles
+- **Language Detection**: Automatically detects English and French subtitles using langdetect
 - **MKV Conversion**: Converts MKV to MP4 and extracts embedded subtitles
-- **Subtitle Normalization**: Renames subtitles to 2-letter ISO language codes
-- **Smart Default Selection**: Automatically selects the best subtitle (French > English)
+- **Auto-Delete MKV**: Moves original MKV to .Trash or prompts for deletion
+- **Subtitle Normalization**: Renames all subtitles to 2-letter ISO language codes (.lang.srt)
+- **Duplicate Detection**: Automatically removes duplicate subtitle files
+- **Auto-Convert Mode**: Optional checkbox to process files automatically on drop
+- **Auto-Reload**: Detects new subtitle files when window gains focus
 - **VLC Integration**: Click the filename to open the video in VLC
 
 ## Requirements
@@ -53,30 +56,35 @@ python3 main.py
 
 ### Workflow
 
-#### For MKV files:
-1. Drag and drop an MKV file onto the window
+#### Basic Usage:
+1. Drag and drop a video file (MKV or MP4) anywhere in the window
 2. Review embedded and external subtitles
-3. Click "Convert to MP4"
-4. The app will:
-   - Extract all embedded subtitles as separate .srt files
-   - Convert the video to MP4 (no re-encoding, fast)
-   - Reload the interface with the MP4 file
+3. Click "Cleanup" to process
 
-#### For MP4 files:
-1. Drag and drop an MP4 file onto the window
-2. Review external subtitles
-3. Click "Go (Finalize)"
-4. The app will:
-   - Rename all subtitles to `.lang.srt` format (e.g., `movie.fr.srt`, `movie.en.srt`)
-   - Copy the best subtitle as `movie.srt` (French preferred, English fallback)
-   - Handle multiple subtitles of the same language with numbering (e.g., `movie.fr-1.srt`, `movie.fr-2.srt`)
+#### Auto-Convert Mode:
+- Check the "Auto-convert" checkbox
+- Drop a file - it will be processed automatically
+
+#### What Happens During Cleanup:
+
+**For MKV files:**
+1. Extracts all embedded subtitles as separate .srt files
+2. Converts video to MP4 (no re-encoding, fast)
+3. Deletes the original MKV file:
+   - Moves to `.Trash` folder if available
+   - Otherwise prompts for confirmation before deletion
+4. Continues with subtitle cleanup (see below)
+
+**For all files (MKV and MP4):**
+1. Renames all subtitles to `.lang.srt` format (e.g., `movie.fr.srt`, `movie.en.srt`)
+2. Handles multiple subtitles of the same language with numbering (e.g., `movie.fr-1.srt`, `movie.fr-2.srt`)
+3. Removes duplicate subtitle files (same content)
 
 ### Result
 
 After processing, you'll have:
 - `movie.mp4` - The video file (Samsung TV compatible)
-- `movie.srt` - The default subtitle (French or English)
-- `movie.fr.srt`, `movie.en.srt`, etc. - All subtitles with language codes
+- `movie.fr.srt`, `movie.en.srt`, etc. - All unique subtitles with 2-letter language codes
 
 ## How It Works
 
@@ -84,6 +92,7 @@ After processing, you'll have:
 - Uses `ffmpeg` with `-codec copy` for fast, lossless conversion
 - Extracts subtitles and converts them to SRT format
 - Automatically handles naming conflicts
+- Deletes original MKV after successful conversion
 
 ### Language Detection
 - Uses the `langdetect` library for accurate language identification
@@ -94,6 +103,16 @@ After processing, you'll have:
 - Converts 3-letter language codes to 2-letter ISO codes
 - Ensures Samsung TV compatibility
 - Maintains all subtitle variants with proper numbering
+
+### Duplicate Detection
+- Calculates SHA256 hash of each subtitle file
+- Removes files with identical content
+- Keeps the first occurrence, deletes the rest
+
+### Auto-Reload on Focus
+- When the window gains focus, checks for new subtitle files
+- Automatically reloads the file if subtitles have changed
+- Useful when adding subtitles from other sources
 
 ## Troubleshooting
 
