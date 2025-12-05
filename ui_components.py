@@ -305,8 +305,11 @@ class MainWindow(Gtk.Window):
                 print("MKV file deletion cancelled by user")
     
     def _get_mount_point(self, path):
-        """Get the mount point for a given path."""
+        """Get the mount point for a given path, resolving symlinks."""
+        # Resolve all symbolic links first
+        path = os.path.realpath(path)
         path = os.path.abspath(path)
+        
         while not os.path.ismount(path):
             parent = os.path.dirname(path)
             if parent == path:
