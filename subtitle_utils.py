@@ -3,6 +3,7 @@ Subtitle processing and finalization for MP4 files
 """
 import os
 import shutil
+import hashlib
 from collections import defaultdict
 from media_handler import MediaHandler
 
@@ -11,7 +12,7 @@ def process_mp4_subtitles(mp4_path):
     """
     Process subtitles for MP4 file:
     1. Rename all external subtitles to .lang.srt format
-    2. Copy best subtitle (French > English) as .srt without language code
+    2. Remove duplicate subtitles (same content)
     
     Args:
         mp4_path: Path to the MP4 file
@@ -32,8 +33,8 @@ def process_mp4_subtitles(mp4_path):
     # Rename all subtitles to .lang.srt format
     renamed_subs = rename_subtitles_with_language(external_subs, basename, directory)
     
-    # Copy best subtitle as default .srt
-    copy_best_subtitle(renamed_subs, basename, directory)
+    # Remove duplicate subtitles
+    remove_duplicate_subtitles(renamed_subs)
     
     print("Subtitle processing complete")
 
@@ -101,41 +102,71 @@ def rename_subtitles_with_language(external_subs, basename, directory):
     return renamed_subs
 
 
-def copy_best_subtitle(renamed_subs, basename, directory):
+def remove_duplicate_subtitles(subtitle_list):
     """
-    Copy the best subtitle (French > English) as basename.srt.
+    Remove duplicate subtitle files (same content).
+    Keep the first occurrence, delete the rest.
     
     Args:
-        renamed_subs: List of renamed subtitle dicts
-        basename: Base filename without extension
-        directory: Directory path
+        subtitle_list: List of subtitle dicts with 'path' key
     """
-    print("Copying best subtitle as default .srt...")
+    print("Checking for duplicate subtitles...")
     
-    # Find French subtitle first
-    french_sub = None
-    english_sub = None
+    # Dictionary to store hash -> first file with that hash
+    hash_to_file = {}
+    files_to_delete = []
     
-    for sub in renamed_subs:
-        if sub['language'] == 'fr' and not french_sub:
-            french_sub = sub
-        elif sub['language'] == 'en' and not english_sub:
-            english_sub = sub
+    for sub in subtitle_list:
+        file_path = sub['path']
+        
+        if not os.path.exists(file_path):
+            continue
+        
+        # Calculate file hash
+        file_hash = calculate_file_hash(file_path)
+        
+        if file_hash in hash_to_file:
+            # Duplicate found
+            original = hash_to_file[file_hash]
+            print(f"  Duplicate found: {sub['filename']} (same as {os.path.basename(original)})")
+            files_to_delete.append(file_path)
+        else:
+            # First occurrence of this content
+            hash_to_file[file_hash] = file_path
     
-    # Choose best subtitle
-    best_sub = french_sub if french_sub else english_sub
+    # Delete duplicate files
+    for file_path in files_to_delete:
+        try:
+            print(f"  Deleting duplicate: {os.path.basename(file_path)}")
+            os.remove(file_path)
+        except Exception as e:
+            print(f"  Error deleting {os.path.basename(file_path)}: {e}")
     
-    if not best_sub:
-        print("  No French or English subtitle found")
-        return
+    if not files_to_delete:
+        print("  No duplicates found")
+    else:
+        print(f"  Removed {len(files_to_delete)} duplicate subtitle(s)")
+
+
+def calculate_file_hash(file_path):
+    """
+    Calculate SHA256 hash of a file.
     
-    # Copy to basename.srt
-    source_path = best_sub['path']
-    dest_path = os.path.join(directory, f"{basename}.srt")
+    Args:
+        file_path: Path to the file
+    
+    Returns:
+        str: Hexadecimal hash string
+    """
+    sha256_hash = hashlib.sha256()
     
     try:
-        print(f"  Copying: {best_sub['filename']} -> {basename}.srt")
-        shutil.copy2(source_path, dest_path)
-        print(f"  Default subtitle set: {best_sub['language']}")
+        with open(file_path, 'rb') as f:
+            # Read file in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
     except Exception as e:
-        print(f"  Error copying default subtitle: {e}")
+        print(f"Error calculating hash for {file_path}: {e}")
+        # Return a unique value if hash fails
+        return f"error_{file_path}"

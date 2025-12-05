@@ -12,6 +12,8 @@ Subtitles with 3 letters language codes are not recognized.
 
 # Spec
 
+The software runs on Linux.
+
 The software show a window. The user can drag and drop a media file (mkv or mp4) on that window.
 
 The software will scan the directory for associated subtitles (with the same name, and a .srt or .lang.srt extension).
@@ -28,9 +30,9 @@ Only 'srt' files will be recognised.
 
 The languages for srt files will be deduced from the file content. Only English and French are supported. (a simple method could be to look for some specific letters or pair of letter frequency, but there are other options). 
 
-## If the file is a 'mkv' a convert button will appear
+There is a "cleanup" button.
 
-It will:
+## If the file is a 'mkv' a preliminary step will be perfomed:
 
 ### extract the subtitles from the mkv file with proper names and extensions. If subtitles already exist, the ones extracted will have a -1, -2 added.
 
@@ -38,16 +40,20 @@ It will:
 
 It will the reload the user interface with the mp4 file.
 
-## When the file is an 'mp4' file, a "go" button will appear
+The mkv file will be deleted:
+ if a .Trash folder exists on the file's volume the file will be moved there (eiter via a rename or by using some command-line tool).
+ if not, a confirm dialog will popup and file will be rm'ed if confirmed
 
-It will
+## The the process will continue:
 
-### Rename existing subtitles to follow the .lang.srt rule, with 'lang' being the 2 letter iso code.
-
-### Copy the french subtitle as a direct '.srt' if present
-
-### If no french subtitle is present, it will do the same with the english subtitle
+It will rename existing subtitles to follow the .lang.srt rule, with 'lang' being the 2 letter iso code.
 
 ### Result
 
-After potential conversion and renaming, we will have an mp4 file and the best suitable subtitle with the same name, with no language extension, suitable being french first, english second. The subtitles will also be availalble as .lang.srt, with -nn for multiple subtitles.
+After potential conversion and renaming, we will have an mp4 file and the best suitable subtitles availalble as .lang.srt, with -nn for multiple subtitles.
+
+Identical subtitles (same content) will be folded into one (ie: one copy left, all others removed)
+
+###
+
+Additional UI: a button (check box) that will allow the user to specify that he wants to convert+rename to be executed automatically when a file is dropped.
