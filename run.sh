@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 # Use system Python3 to access system-installed PyGObject
 # Set PYTHONPATH to include the virtual environment for langdetect
-VENV_SITE_PACKAGES="$(pwd)/.venv/lib/python$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')/site-packages"
+VENV_SITE_PACKAGES="$(pwd)/venv/lib/python$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')/site-packages"
 export PYTHONPATH="$VENV_SITE_PACKAGES:$PYTHONPATH"
 
 # Run with env -i to start with clean environment, keeping only essential variables

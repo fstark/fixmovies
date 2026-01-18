@@ -11,7 +11,7 @@ from media_handler import MediaHandler
 def process_mp4_subtitles(mp4_path):
     """
     Process subtitles for MP4 file:
-    1. Rename all external subtitles to .lang.srt format
+    1. Rename subtitles intelligently (French as default, English if no French)
     2. Remove duplicate subtitles (same content)
     
     Args:
@@ -30,7 +30,7 @@ def process_mp4_subtitles(mp4_path):
         print("No external subtitles found")
         return
     
-    # Rename all subtitles to .lang.srt format
+    # Rename all subtitles intelligently
     renamed_subs = rename_subtitles_with_language(external_subs, basename, directory)
     
     # Remove duplicate subtitles
@@ -41,7 +41,10 @@ def process_mp4_subtitles(mp4_path):
 
 def rename_subtitles_with_language(external_subs, basename, directory):
     """
-    Rename all external subtitles to follow .lang.srt or .lang-N.srt format.
+    Rename subtitles intelligently:
+    - If only FR or only EN: first one -> basename.srt, others -> basename.lang-N.srt
+    - If both FR and EN: FR -> basename.srt, EN -> basename.en.srt (or -N for multiples)
+    - Other languages: always keep language code
     
     Args:
         external_subs: List of external subtitle dicts
@@ -51,12 +54,16 @@ def rename_subtitles_with_language(external_subs, basename, directory):
     Returns:
         list: List of renamed subtitle dicts with updated paths
     """
-    print("Renaming subtitles to .lang.srt format...")
+    print("Renaming subtitles...")
     
     # Group subtitles by language
     lang_groups = defaultdict(list)
     for sub in external_subs:
         lang_groups[sub['language']].append(sub)
+    
+    # Determine naming strategy
+    has_french = 'fr' in lang_groups
+    has_english = 'en' in lang_groups
     
     renamed_subs = []
     
@@ -65,13 +72,36 @@ def rename_subtitles_with_language(external_subs, basename, directory):
             old_path = sub['path']
             old_filename = sub['filename']
             
-            # Generate new filename
-            if i == 0 and len(subs) == 1:
-                # Single subtitle of this language
-                new_filename = f"{basename}.{language}.srt"
+            # Determine new filename
+            if language == 'fr':
+                if i == 0 and len(subs) == 1:
+                    # First (or only) French subtitle becomes the default .srt
+                    new_filename = f"{basename}.srt"
+                elif i == 0:
+                    # First of multiple French subtitles
+                    new_filename = f"{basename}.fr-1.srt"
+                else:
+                    # Additional French subtitles
+                    new_filename = f"{basename}.fr-{i+1}.srt"
+            elif language == 'en':
+                if i == 0 and len(subs) == 1 and not has_french:
+                    # Only English subtitle and no French -> becomes default .srt
+                    new_filename = f"{basename}.srt"
+                elif i == 0 and len(subs) == 1:
+                    # Single English subtitle but French exists -> keep language code
+                    new_filename = f"{basename}.en.srt"
+                elif i == 0:
+                    # First of multiple English subtitles
+                    new_filename = f"{basename}.en-1.srt"
+                else:
+                    # Additional English subtitles
+                    new_filename = f"{basename}.en-{i+1}.srt"
             else:
-                # Multiple subtitles of same language
-                new_filename = f"{basename}.{language}-{i+1}.srt"
+                # Other languages: always keep language code
+                if i == 0 and len(subs) == 1:
+                    new_filename = f"{basename}.{language}.srt"
+                else:
+                    new_filename = f"{basename}.{language}-{i+1}.srt"
             
             new_path = os.path.join(directory, new_filename)
             

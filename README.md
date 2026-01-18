@@ -36,8 +36,8 @@ sudo apt-get install python3 python3-venv python3-gi python3-gi-cairo gir1.2-gtk
 
 3. Create a virtual environment and install Python dependencies:
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv --system-site-packages venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -50,7 +50,7 @@ Run the application:
 
 Or manually:
 ```bash
-source .venv/bin/activate
+source venv/bin/activate
 python3 main.py
 ```
 
@@ -84,6 +84,7 @@ python3 main.py
 
 After processing, you'll have:
 - `movie.mp4` - The video file (Samsung TV compatible)
+- `movie.srt` - The default subtitle (French preferred, English fallback)
 - `movie.fr.srt`, `movie.en.srt`, etc. - All unique subtitles with 2-letter language codes
 
 ## How It Works
@@ -125,7 +126,7 @@ sudo apt-get install ffmpeg vlc
 ### Import Errors
 If you get Python import errors, ensure you're using the virtual environment:
 ```bash
-source .venv/bin/activate
+source venv/bin/activate
 python3 main.py
 ```
 

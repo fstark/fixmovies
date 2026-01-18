@@ -3,13 +3,16 @@ UI Components for Samsung TV Media File Converter
 """
 import os
 import subprocess
+import tempfile
+import shutil
+import threading
 import gi
 
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk
+from gi.repository import Gtk, Gdk, GLib
 
-from media_handler import MediaHandler
-from converter import convert_mkv_to_mp4
+from media_handler import MediaHandler, TARGET_LANGUAGE
+from converter import convert_mkv_to_mp4, extract_single_subtitle
 from subtitle_utils import process_mp4_subtitles
 
 
@@ -24,6 +27,8 @@ class MainWindow(Gtk.Window):
         self.current_file = None
         self.media_handler = MediaHandler()
         self.last_subtitle_list = []
+        self.embedded_subs = []
+        self.external_subs = []
         
         self._build_ui()
         self._setup_drag_and_drop()
@@ -77,6 +82,8 @@ class MainWindow(Gtk.Window):
         # Embedded subtitles list
         self.embedded_store = Gtk.ListStore(str, str)  # Language, Size
         self.embedded_view = Gtk.TreeView(model=self.embedded_store)
+        self.embedded_view.get_selection().set_mode(Gtk.SelectionMode.SINGLE)
+        self.embedded_view.get_selection().connect("changed", self._on_subtitle_selection_changed)
         
         lang_renderer = Gtk.CellRendererText()
         lang_column = Gtk.TreeViewColumn("Language", lang_renderer, text=0)
@@ -101,6 +108,8 @@ class MainWindow(Gtk.Window):
         # External subtitles list
         self.external_store = Gtk.ListStore(str, str)  # Language, Size
         self.external_view = Gtk.TreeView(model=self.external_store)
+        self.external_view.get_selection().set_mode(Gtk.SelectionMode.SINGLE)
+        self.external_view.get_selection().connect("changed", self._on_subtitle_selection_changed)
         
         lang_renderer2 = Gtk.CellRendererText()
         lang_column2 = Gtk.TreeViewColumn("Language", lang_renderer2, text=0)
@@ -115,6 +124,13 @@ class MainWindow(Gtk.Window):
         external_scroll.set_shadow_type(Gtk.ShadowType.IN)
         external_scroll.add(self.external_view)
         main_box.pack_start(external_scroll, True, True, 5)
+        
+        # Translate button
+        self.translate_button = Gtk.Button(label="🌐 Translate Selected Subtitle to French")
+        self.translate_button.set_size_request(-1, 40)
+        self.translate_button.set_sensitive(False)  # Disabled until non-French subtitle is selected
+        self.translate_button.connect("clicked", self._on_translate_button_clicked)
+        main_box.pack_start(self.translate_button, False, False, 10)
         
         # Cleanup button (works for both MKV and MP4 files)
         self.cleanup_button = Gtk.Button(label="🧹 Cleanup & Optimize")
@@ -168,6 +184,10 @@ class MainWindow(Gtk.Window):
         
         # Analyze file
         embedded_subs, external_subs = self.media_handler.analyze_file(file_path)
+        
+        # Store subtitle data for translation feature
+        self.embedded_subs = embedded_subs
+        self.external_subs = external_subs
         
         # Store current subtitle list for comparison
         self.last_subtitle_list = [sub['filename'] for sub in external_subs if 'filename' in sub]
@@ -336,6 +356,112 @@ class MainWindow(Gtk.Window):
             print("Subtitle files changed, reloading...")
             self.load_file(self.current_file)
     
+    def _on_subtitle_selection_changed(self, selection):
+        """Handle subtitle selection change - enable translate button for non-French subtitles."""
+        model, treeiter = selection.get_selected()
+        
+        if treeiter is None:
+            self.translate_button.set_sensitive(False)
+            return
+        
+        # Get language of selected subtitle
+        language = model[treeiter][0]
+        
+        # Enable translate button only if subtitle is not French
+        is_french = language.lower() in ['fr', 'french', 'fra', 'fre']
+        self.translate_button.set_sensitive(not is_french)
+    
+    def _on_translate_button_clicked(self, button):
+        """Handle translate button click - extract and translate selected subtitle."""
+        if not self.current_file:
+            return
+        
+        # Determine which subtitle is selected (embedded or external)
+        embedded_selection = self.embedded_view.get_selection()
+        external_selection = self.external_view.get_selection()
+        
+        embedded_model, embedded_iter = embedded_selection.get_selected()
+        external_model, external_iter = external_selection.get_selected()
+        
+        temp_dir = None
+        subtitle_path = None
+        is_embedded = False
+        
+        try:
+            # Check embedded subtitles first
+            if embedded_iter is not None:
+                is_embedded = True
+                # Get the index of the selected subtitle
+                path = embedded_model.get_path(embedded_iter)
+                index = path.get_indices()[0]
+                sub_info = self.embedded_subs[index]
+                
+                # Extract to temp directory
+                temp_dir = tempfile.mkdtemp(prefix='subtitle_translate_')
+                subtitle_path = extract_single_subtitle(
+                    self.current_file,
+                    sub_info['index'],
+                    sub_info['language'],
+                    temp_dir
+                )
+                
+            # Check external subtitles
+            elif external_iter is not None:
+                path = external_model.get_path(external_iter)
+                index = path.get_indices()[0]
+                sub_info = self.external_subs[index]
+                subtitle_path = sub_info['path']
+            
+            if not subtitle_path:
+                self._show_error("No subtitle selected")
+                return
+            
+            # Determine output filename
+            video_dir = os.path.dirname(self.current_file)
+            video_base = os.path.splitext(os.path.basename(self.current_file))[0]
+            output_file = os.path.join(video_dir, f"{video_base}.fr.srt")
+            
+            # Check if output file already exists
+            if os.path.exists(output_file):
+                dialog = Gtk.MessageDialog(
+                    transient_for=self,
+                    flags=0,
+                    message_type=Gtk.MessageType.QUESTION,
+                    buttons=Gtk.ButtonsType.YES_NO,
+                    text="Overwrite existing French subtitle?"
+                )
+                dialog.format_secondary_text(
+                    f"The file {os.path.basename(output_file)} already exists. Overwrite it?"
+                )
+                response = dialog.run()
+                dialog.destroy()
+                
+                if response != Gtk.ResponseType.YES:
+                    return
+            
+            # Show translation dialog with live output
+            dialog = TranslationDialog(self, subtitle_path, output_file)
+            response = dialog.run()
+            dialog.destroy()
+            
+            if response == Gtk.ResponseType.OK:
+                # Reload file to show new subtitle
+                self.load_file(self.current_file)
+                self.status_label.set_markup("<i>Translation complete!</i>")
+            
+        except Exception as e:
+            print(f"Error during translation: {e}")
+            self._show_error(f"Translation failed: {e}")
+        
+        finally:
+            # Clean up temp directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    print(f"Cleaned up temp directory: {temp_dir}")
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temp directory: {e}")
+    
     def _show_error(self, message):
         """Show error dialog."""
         dialog = Gtk.MessageDialog(
@@ -348,3 +474,139 @@ class MainWindow(Gtk.Window):
         dialog.format_secondary_text(message)
         dialog.run()
         dialog.destroy()
+
+
+class TranslationDialog(Gtk.Dialog):
+    """Dialog that shows live output from subtitle translation."""
+    
+    def __init__(self, parent, input_file, output_file):
+        super().__init__(title="Translating Subtitle to French", transient_for=parent, flags=0)
+        self.add_buttons(Gtk.STOCK_CLOSE, Gtk.ResponseType.OK)
+        self.set_default_size(700, 500)
+        self.set_border_width(10)
+        
+        self.input_file = input_file
+        self.output_file = output_file
+        self.process = None
+        self.translation_successful = False
+        
+        # Make dialog non-modal but disable parent interaction
+        self.set_modal(True)
+        
+        # Build UI
+        box = self.get_content_area()
+        box.set_spacing(10)
+        
+        # Info label
+        info_label = Gtk.Label()
+        info_label.set_markup(
+            f"<b>Translating:</b> {os.path.basename(input_file)}\n"
+            f"<b>Output:</b> {os.path.basename(output_file)}"
+        )
+        info_label.set_halign(Gtk.Align.START)
+        box.pack_start(info_label, False, False, 0)
+        
+        # Scrolled window with text view for output
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_shadow_type(Gtk.ShadowType.IN)
+        scrolled.set_vexpand(True)
+        
+        self.text_view = Gtk.TextView()
+        self.text_view.set_editable(False)
+        self.text_view.set_cursor_visible(False)
+        self.text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.text_view.set_monospace(True)
+        
+        self.text_buffer = self.text_view.get_buffer()
+        scrolled.add(self.text_view)
+        box.pack_start(scrolled, True, True, 0)
+        
+        # Status label
+        self.status_label = Gtk.Label()
+        self.status_label.set_markup("<i>Starting translation...</i>")
+        self.status_label.set_halign(Gtk.Align.START)
+        box.pack_start(self.status_label, False, False, 0)
+        
+        # Disable close button until done
+        self.set_response_sensitive(Gtk.ResponseType.OK, False)
+        
+        self.show_all()
+        
+        # Start translation in background thread
+        thread = threading.Thread(target=self._run_translation, daemon=True)
+        thread.start()
+    
+    def _run_translation(self):
+        """Run the translation subprocess in background thread."""
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            translate_script = os.path.join(script_dir, "srt_translate.py")
+            
+            # Command to run translation
+            cmd = [
+                'python3',
+                '-u',  # Unbuffered output for real-time progress
+                translate_script,
+                TARGET_LANGUAGE,
+                self.input_file,
+                '-o', self.output_file  # Specify exact output location
+            ]
+            
+            self._append_output(f"Running: {' '.join(cmd)}\n\n")
+            
+            # Run process and capture output line by line
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Read output line by line
+            for line in self.process.stdout:
+                GLib.idle_add(self._append_output, line)
+            
+            # Wait for process to complete
+            return_code = self.process.wait()
+            
+            if return_code == 0:
+                # Check if output file was created
+                if os.path.exists(self.output_file):
+                    GLib.idle_add(self._translation_complete, True, "Translation completed successfully!")
+                else:
+                    GLib.idle_add(self._translation_complete, False, f"Translation failed: output file not created")
+            else:
+                GLib.idle_add(self._translation_complete, False, f"Translation failed with exit code {return_code}")
+        
+        except Exception as e:
+            error_msg = f"Error during translation: {e}"
+            print(error_msg)
+            GLib.idle_add(self._append_output, f"\n\nERROR: {error_msg}\n")
+            GLib.idle_add(self._translation_complete, False, error_msg)
+    
+    def _append_output(self, text):
+        """Append text to the output view (must be called from main thread)."""
+        end_iter = self.text_buffer.get_end_iter()
+        self.text_buffer.insert(end_iter, text)
+        
+        # Auto-scroll to bottom
+        mark = self.text_buffer.get_insert()
+        self.text_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+        
+        return False  # Don't repeat (for GLib.idle_add)
+    
+    def _translation_complete(self, success, message):
+        """Called when translation is complete (must be called from main thread)."""
+        self.translation_successful = success
+        
+        if success:
+            self.status_label.set_markup(f"<b><span color='green'>✓ {message}</span></b>")
+        else:
+            self.status_label.set_markup(f"<b><span color='red'>✗ {message}</span></b>")
+        
+        # Enable close button
+        self.set_response_sensitive(Gtk.ResponseType.OK, True)
+        
+        return False  # Don't repeat (for GLib.idle_add)

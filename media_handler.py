@@ -6,6 +6,9 @@ import json
 import subprocess
 from langdetect import detect, LangDetectException
 
+# Target language for translation
+TARGET_LANGUAGE = "french"
+
 
 class MediaHandler:
     """Handles media file analysis and subtitle detection."""

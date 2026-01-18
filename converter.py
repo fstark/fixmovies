@@ -137,3 +137,43 @@ def get_unique_subtitle_path(directory, basename, language):
         # Safety limit
         if counter > 100:
             raise Exception(f"Too many subtitle files with language {language}")
+
+
+def extract_single_subtitle(video_path, stream_index, language, output_dir):
+    """
+    Extract a single subtitle stream to a temporary directory.
+    
+    Args:
+        video_path: Path to the video file
+        stream_index: Stream index to extract
+        language: Language code for naming
+        output_dir: Directory to save the extracted subtitle
+    
+    Returns:
+        str: Path to the extracted subtitle file
+    """
+    basename = os.path.splitext(os.path.basename(video_path))[0]
+    output_file = os.path.join(output_dir, f"{basename}.{language}.srt")
+    
+    print(f"Extracting subtitle stream {stream_index} to: {output_file}")
+    
+    cmd = [
+        'ffmpeg',
+        '-i', video_path,
+        '-map', f"0:{stream_index}",
+        '-c:s', 'srt',
+        '-y',
+        output_file
+    ]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        print(f"Extracted subtitle: {output_file}")
+        return output_file
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Failed to extract subtitle: {e.stderr}")

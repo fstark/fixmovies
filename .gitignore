@@ -42,3 +42,5 @@ htmlcov/
 *.avi
 *.mov
 *.wmv
+
+secret.sh
