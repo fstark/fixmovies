@@ -80,7 +80,7 @@ class MainWindow(Gtk.Window):
         main_box.pack_start(embed_label, False, False, 10)
         
         # Embedded subtitles list
-        self.embedded_store = Gtk.ListStore(str, str)  # Language, Size
+        self.embedded_store = Gtk.ListStore(str, str, str, str, str)  # Language, Title, Format, Size, View
         self.embedded_view = Gtk.TreeView(model=self.embedded_store)
         self.embedded_view.get_selection().set_mode(Gtk.SelectionMode.SINGLE)
         self.embedded_view.get_selection().connect("changed", self._on_subtitle_selection_changed)
@@ -89,9 +89,23 @@ class MainWindow(Gtk.Window):
         lang_column = Gtk.TreeViewColumn("Language", lang_renderer, text=0)
         self.embedded_view.append_column(lang_column)
         
+        title_renderer = Gtk.CellRendererText()
+        title_column = Gtk.TreeViewColumn("Title", title_renderer, text=1)
+        self.embedded_view.append_column(title_column)
+        
+        format_renderer = Gtk.CellRendererText()
+        format_column = Gtk.TreeViewColumn("Format", format_renderer, text=2)
+        self.embedded_view.append_column(format_column)
+        
         size_renderer = Gtk.CellRendererText()
-        size_column = Gtk.TreeViewColumn("Size", size_renderer, text=1)
+        size_column = Gtk.TreeViewColumn("Size", size_renderer, text=3)
         self.embedded_view.append_column(size_column)
+        
+        view_renderer = Gtk.CellRendererText()
+        view_column = Gtk.TreeViewColumn("👁", view_renderer, text=4)
+        view_column.set_clickable(True)
+        self.embedded_view.append_column(view_column)
+        self.embedded_view.connect("row-activated", self._on_embedded_subtitle_activated)
         
         embed_scroll = Gtk.ScrolledWindow()
         embed_scroll.set_size_request(-1, 120)
@@ -106,7 +120,7 @@ class MainWindow(Gtk.Window):
         main_box.pack_start(external_label, False, False, 10)
         
         # External subtitles list
-        self.external_store = Gtk.ListStore(str, str)  # Language, Size
+        self.external_store = Gtk.ListStore(str, str, str, str)  # Language, Format, Size, View
         self.external_view = Gtk.TreeView(model=self.external_store)
         self.external_view.get_selection().set_mode(Gtk.SelectionMode.SINGLE)
         self.external_view.get_selection().connect("changed", self._on_subtitle_selection_changed)
@@ -115,9 +129,19 @@ class MainWindow(Gtk.Window):
         lang_column2 = Gtk.TreeViewColumn("Language", lang_renderer2, text=0)
         self.external_view.append_column(lang_column2)
         
+        format_renderer2 = Gtk.CellRendererText()
+        format_column2 = Gtk.TreeViewColumn("Format", format_renderer2, text=1)
+        self.external_view.append_column(format_column2)
+        
         size_renderer2 = Gtk.CellRendererText()
-        size_column2 = Gtk.TreeViewColumn("Size", size_renderer2, text=1)
+        size_column2 = Gtk.TreeViewColumn("Size", size_renderer2, text=2)
         self.external_view.append_column(size_column2)
+        
+        view_renderer2 = Gtk.CellRendererText()
+        view_column2 = Gtk.TreeViewColumn("👁", view_renderer2, text=3)
+        view_column2.set_clickable(True)
+        self.external_view.append_column(view_column2)
+        self.external_view.connect("row-activated", self._on_external_subtitle_activated)
         
         external_scroll = Gtk.ScrolledWindow()
         external_scroll.set_size_request(-1, 120)
@@ -195,12 +219,12 @@ class MainWindow(Gtk.Window):
         # Update embedded subtitles list
         self.embedded_store.clear()
         for sub in embedded_subs:
-            self.embedded_store.append([sub['language'], sub['size']])
+            self.embedded_store.append([sub['language'], sub.get('title', ''), sub['format'], sub['size'], '👁'])
         
         # Update external subtitles list
         self.external_store.clear()
         for sub in external_subs:
-            self.external_store.append([sub['language'], sub['size']])
+            self.external_store.append([sub['language'], sub['format'], sub['size'], '👁'])
         
         # Enable cleanup button
         self.cleanup_button.set_sensitive(True)
@@ -461,6 +485,130 @@ class MainWindow(Gtk.Window):
                     print(f"Cleaned up temp directory: {temp_dir}")
                 except Exception as e:
                     print(f"Warning: Failed to clean up temp directory: {e}")
+    
+    def _on_embedded_subtitle_activated(self, treeview, path, column):
+        """Handle double-click or activation on embedded subtitle."""
+        # Get the selected subtitle index
+        model = treeview.get_model()
+        iter = model.get_iter(path)
+        row_index = path.get_indices()[0]
+        
+        if row_index < len(self.embedded_subs):
+            sub = self.embedded_subs[row_index]
+            self._view_embedded_subtitle(sub)
+    
+    def _on_external_subtitle_activated(self, treeview, path, column):
+        """Handle double-click or activation on external subtitle."""
+        # Get the selected subtitle index
+        model = treeview.get_model()
+        iter = model.get_iter(path)
+        row_index = path.get_indices()[0]
+        
+        if row_index < len(self.external_subs):
+            sub = self.external_subs[row_index]
+            self._view_external_subtitle(sub)
+    
+    def _view_embedded_subtitle(self, subtitle):
+        """Extract and view an embedded subtitle."""
+        if not self.current_file:
+            return
+        
+        try:
+            # Create temp directory
+            temp_dir = tempfile.mkdtemp()
+            output_file = os.path.join(temp_dir, f"temp_subtitle_{subtitle['index']}.srt")
+            
+            # Extract subtitle using ffmpeg
+            cmd = [
+                'ffmpeg',
+                '-i', self.current_file,
+                '-map', f"0:{subtitle['index']}",
+                '-c:s', 'srt',
+                '-y',
+                output_file
+            ]
+            
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            
+            # Read and display content
+            with open(output_file, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            
+            # Get file size
+            file_size = os.path.getsize(output_file)
+            
+            # Clean up temp file
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            # Show dialog
+            self._show_subtitle_viewer(f"{subtitle['language']} - {subtitle.get('title', '')} (Embedded)", content, file_size)
+            
+        except Exception as e:
+            self._show_error(f"Failed to view subtitle: {e}")
+    
+    def _view_external_subtitle(self, subtitle):
+        """View an external subtitle file."""
+        try:
+            with open(subtitle['path'], 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            
+            # Get file size
+            file_size = os.path.getsize(subtitle['path'])
+            
+            self._show_subtitle_viewer(f"{subtitle['language']} - {subtitle['filename']}", content, file_size)
+            
+        except Exception as e:
+            self._show_error(f"Failed to read subtitle file: {e}")
+    
+    def _show_subtitle_viewer(self, title, content, file_size):
+        """Show a dialog window with subtitle content."""
+        dialog = Gtk.Dialog(title=title, parent=self, modal=True)
+        dialog.set_default_size(700, 500)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        
+        content_area = dialog.get_content_area()
+        
+        # Create scrolled window with text view
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_shadow_type(Gtk.ShadowType.IN)
+        
+        text_view = Gtk.TextView()
+        text_view.set_editable(False)
+        text_view.set_monospace(True)
+        text_view.set_left_margin(10)
+        text_view.set_right_margin(10)
+        text_view.get_buffer().set_text(content)
+        
+        scrolled.add(text_view)
+        content_area.pack_start(scrolled, True, True, 0)
+        
+        # Calculate statistics
+        line_count = content.count('\n') + 1 if content else 0
+        
+        # Format file size
+        if file_size < 1024:
+            size_str = f"{file_size} B"
+        elif file_size < 1024 * 1024:
+            size_str = f"{file_size / 1024:.1f} KB"
+        elif file_size < 1024 * 1024 * 1024:
+            size_str = f"{file_size / (1024 * 1024):.1f} MB"
+        else:
+            size_str = f"{file_size / (1024 * 1024 * 1024):.1f} GB"
+        
+        # Create info label
+        info_label = Gtk.Label()
+        info_label.set_markup(f"<small>Size: {size_str}  |  Lines: {line_count:,}</small>")
+        info_label.set_halign(Gtk.Align.START)
+        info_label.set_margin_start(10)
+        info_label.set_margin_end(10)
+        info_label.set_margin_top(5)
+        info_label.set_margin_bottom(5)
+        
+        content_area.pack_start(info_label, False, False, 0)
+        
+        dialog.show_all()
+        dialog.run()
+        dialog.destroy()
     
     def _show_error(self, message):
         """Show error dialog."""

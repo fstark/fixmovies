@@ -31,7 +31,7 @@ class MediaHandler:
         return embedded_subs, external_subs
     
     def _get_embedded_subtitles(self, file_path):
-        """Get embedded subtitles from video file using ffprobe."""
+        """Get embedded subtitles from video file using ffprobe and mediainfo."""
         subtitles = []
         
         try:
@@ -50,6 +50,9 @@ class MediaHandler:
             
             data = json.loads(result.stdout)
             
+            # Get title information from mediainfo (ffprobe doesn't expose MP4 subtitle titles)
+            title_map = self._get_subtitle_titles_from_mediainfo(file_path)
+            
             for stream in data.get('streams', []):
                 # Get language from stream tags
                 tags = stream.get('tags', {})
@@ -60,16 +63,28 @@ class MediaHandler:
                     # Try to convert 3-letter codes to 2-letter
                     language = self._normalize_language_code(language)
                 
-                # Estimate size (not directly available from ffprobe)
-                size = 'embedded'
+                # Get title/description (e.g., "SDH", "Forced", etc.)
+                # Try FFprobe tags first, then fall back to mediainfo
+                stream_index = stream.get('index', 0)
+                title = tags.get('title', '') or title_map.get(stream_index, '')
+                
+                # Get codec name (format)
+                codec = stream.get('codec_name', 'unknown')
+                
+                # Try to get size from tags, otherwise leave as --
+                size = tags.get('NUMBER_OF_BYTES', '--')
+                if size != '--':
+                    size = self._format_file_size(int(size))
                 
                 subtitles.append({
                     'language': language,
+                    'title': title,
+                    'format': codec,
                     'size': size,
-                    'index': stream.get('index', 0)
+                    'index': stream_index
                 })
                 
-                print(f"  Embedded subtitle: {language} (index {stream.get('index')})")
+                print(f"  Embedded subtitle: {language} (index {stream_index}) - {title}")
         
         except subprocess.CalledProcessError as e:
             print(f"Error running ffprobe: {e}")
@@ -79,6 +94,35 @@ class MediaHandler:
             print(f"Unexpected error getting embedded subtitles: {e}")
         
         return subtitles
+    
+    def _get_subtitle_titles_from_mediainfo(self, file_path):
+        """Get subtitle titles from mediainfo (for MP4 files where ffprobe doesn't expose them)."""
+        title_map = {}
+        
+        try:
+            cmd = ['mediainfo', '--Output=JSON', file_path]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+            
+            # Parse mediainfo output to get subtitle titles
+            tracks = data.get('media', {}).get('track', [])
+            subtitle_index = 0
+            
+            for track in tracks:
+                if track.get('@type') == 'Text':
+                    title = track.get('Title', '')
+                    # Map by stream order (typically starts at index 2 or 3 for subtitles)
+                    stream_id = track.get('StreamOrder')
+                    if stream_id is not None:
+                        title_map[int(stream_id)] = title
+                    subtitle_index += 1
+                    
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+            print(f"Note: Could not get subtitle titles from mediainfo: {e}")
+        except Exception as e:
+            print(f"Unexpected error getting mediainfo data: {e}")
+        
+        return title_map
     
     def _get_external_subtitles(self, file_path):
         """Get external .srt subtitle files in the same directory."""
@@ -105,8 +149,12 @@ class MediaHandler:
                     # Get file size
                     size = self._format_file_size(os.path.getsize(full_path))
                     
+                    # Get format from extension
+                    ext = filename.split('.')[-1]
+                    
                     subtitles.append({
                         'language': language,
+                        'format': ext,
                         'size': size,
                         'filename': filename,
                         'path': full_path
