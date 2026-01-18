@@ -7,6 +7,7 @@ import os
 import sys
 import re
 import argparse
+import time
 from openai import OpenAI
 
 
@@ -154,10 +155,31 @@ def translate_srt(srt_file, target_lang, limit=None, output_file=None):
     # Translate in batches
     batch_size = 10
     translated_entries = []
+    total_entries = len(entries)
+    start_time = time.time()
     
     for i in range(0, len(entries), batch_size):
         batch = entries[i:i+batch_size]
-        print(f"Translating entries {i+1}-{min(i+batch_size, len(entries))}...")
+        batch_start_time = time.time()
+        
+        # Calculate ETA
+        if i > 0:
+            elapsed = time.time() - start_time
+            entries_done = i
+            avg_time_per_entry = elapsed / entries_done
+            entries_remaining = total_entries - entries_done
+            eta_seconds = avg_time_per_entry * entries_remaining
+            
+            if eta_seconds < 60:
+                eta_str = f"ETA: {int(eta_seconds)}s"
+            else:
+                eta_minutes = int(eta_seconds / 60)
+                eta_secs = int(eta_seconds % 60)
+                eta_str = f"ETA: {eta_minutes}m {eta_secs}s"
+        else:
+            eta_str = "ETA: calculating..."
+        
+        print(f"Translating entries {i+1}-{min(i+batch_size, len(entries))} / {total_entries}... {eta_str}")
         
         # Extract clean texts (strip tags)
         texts = []
